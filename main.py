@@ -9,7 +9,6 @@ app = FastAPI()
 FILE_PATH = "tasks.json"
 tasks_db = []
 
-
 def load_tasks():
     """Load tasks from JSON file on startup."""
     global tasks_db
