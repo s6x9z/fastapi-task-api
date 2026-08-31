@@ -1,66 +1,52 @@
 import os
 import pytest
 from fastapi.testclient import TestClient
-from main import app, FILE_PATH, load_tasks
+import main
+from main import app, init_db
 
 client = TestClient(app)
 
+
 @pytest.fixture(autouse=True)
-def cleanup_test_db():
-    if os.path.exists(FILE_PATH):
-        os.remove(FILE_PATH)
-    load_tasks()
+def setup_test_db(tmp_path, monkeypatch):
+    """Use an isolated temporary SQLite database for each test run."""
+    db_file = tmp_path / "test_tasks.db"
+    monkeypatch.setattr(main, "DB_FILE", str(db_file))
+    init_db()
     yield
-    if os.path.exists(FILE_PATH):
-        os.remove(FILE_PATH)
-    load_tasks()
 
-def test_root():
-    response = client.get("/")
+
+def test_get_tasks():
+    response = client.get("/tasks")
     assert response.status_code == 200
-    assert response.json() == {
-        "name": "Task API",
-        "version": "1.0",
-        "endpoints": ["/tasks"]
-    }
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) == 3 
 
-def test_health():
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
 
-def test_create_and_get_task():
-    post_res = client.post("/tasks", json={"title": "Test Task"})
-    assert post_res.status_code == 201
-    task = post_res.json()
-    assert task["id"] == 1
-    assert task["title"] == "Test Task"
-    assert task["completed"] is False
+def test_create_task():
+    new_task = {"title": "Test with pytest", "done": False}
+    response = client.post("/tasks", json=new_task)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["title"] == "Test with pytest"
+    assert data["done"] is False
+    assert "id" in data
 
-    get_res = client.get(f"/tasks/{task['id']}")
-    assert get_res.status_code == 200
-    assert get_res.json() == task
 
 def test_update_task():
-    client.post("/tasks", json={"title": "Initial Task"})
-    put_res = client.put("/tasks/1", json={"title": "Updated Task", "completed": True})
-    assert put_res.status_code == 200
-    assert put_res.json()["title"] == "Updated Task"
-    assert put_res.json()["completed"] is True
+    updated_data = {"title": "Learn FastAPI - Updated", "done": True}
+    response = client.put("/tasks/1", json=updated_data)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == 1
+    assert data["title"] == "Learn FastAPI - Updated"
+    assert data["done"] is True
+
 
 def test_delete_task():
-    client.post("/tasks", json={"title": "To Delete"})
-    del_res = client.delete("/tasks/1")
-    assert del_res.status_code == 204
+    response = client.delete("/tasks/1")
+    assert response.status_code == 204
 
-    get_res = client.get("/tasks/1")
-    assert get_res.status_code == 404
-
-def test_query_filtering():
-    client.post("/tasks", json={"title": "Task 1", "completed": False})
-    client.post("/tasks", json={"title": "Task 2", "completed": True})
-
-    res_completed = client.get("/tasks?completed=true")
-    assert res_completed.status_code == 200
-    assert len(res_completed.json()["tasks"]) == 1
-    assert res_completed.json()["tasks"][0]["title"] == "Task 2"
+    get_response = client.get("/tasks/1")
+    assert get_response.status_code == 404
