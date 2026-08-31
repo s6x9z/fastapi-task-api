@@ -1,11 +1,17 @@
 import sqlite3
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Response, status
+
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from database import get_db
 
 app = FastAPI()
 
 DB_FILE = "tasks.db"
+
 
 def get_db_connection():
     """Returns a SQLite connection configured to return rows as dictionaries."""
@@ -43,7 +49,9 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 init_db()
+
 
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1)
@@ -59,6 +67,16 @@ class TaskResponse(BaseModel):
     id: int
     title: str
     done: bool
+
+@app.get("/health/db")
+def health_check_db(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Database connection failed: {str(e)}"
+        )
 
 @app.get("/tasks", response_model=List[TaskResponse])
 def get_tasks():
