@@ -1,6 +1,6 @@
 import sqlite3
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 app = FastAPI()
@@ -48,6 +48,11 @@ init_db()
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1)
     done: Optional[bool] = False
+
+
+class TaskUpdate(BaseModel):
+    title: str = Field(..., min_length=1)
+    done: bool
 
 
 class TaskResponse(BaseModel):
@@ -107,3 +112,44 @@ def create_task(task: TaskCreate):
     conn.close()
 
     return {"id": new_id, "title": task.title, "done": task.done}
+
+
+@app.put("/tasks/{task_id}", response_model=TaskResponse)
+def update_task(task_id: int, task: TaskUpdate):
+    """Update an existing task in SQLite database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+        (task.title, int(task.done), task_id),
+    )
+    conn.commit()
+
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
+
+    conn.close()
+    return {"id": task_id, "title": task.title, "done": task.done}
+
+
+@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(task_id: int):
+    """Delete a task from SQLite database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    conn.commit()
+
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
+
+    conn.close()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
