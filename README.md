@@ -1,26 +1,9 @@
-# FastAPI Task Management API
+# Task Management API
 
-A lightweight RESTful Task API built with Python, FastAPI, and SQLite, featuring Pydantic validation and automated unit testing with Pytest.
+A FastAPI backend for task management, utilizing PostgreSQL in a Docker container, SQLAlchemy ORM, and Alembic for migrations.
 
-## Features
+## Setup Instructions
 
-* **CRUD Operations**: Complete RESTful endpoints for managing tasks (`GET`, `POST`, `PUT`, `DELETE`).
-* **Database Persistence**: SQLite integration surviving application restarts.
-* **Data Validation**: Strict payload parsing using Pydantic models.
-* **Automated Testing**: Test suite built with Pytest and FastAPI's `TestClient` using isolated temporary test databases.
-
-## Tech Stack
-
-* **Language**: Python 3.12+
-* **Framework**: FastAPI
-* **Database**: SQLite3
-* **Testing**: Pytest, HTTPX
-
-## Getting Started
-
-### 1. Set Up Virtual Environment
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+1. **Start the Database:**
+   ```powershell
+   docker run --name taskdb -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tasks -p 5432:5432 -d postgres
