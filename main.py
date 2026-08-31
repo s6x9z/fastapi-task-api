@@ -1,94 +1,77 @@
-import json
-import os
-from typing import Optional
-from fastapi import FastAPI, HTTPException, Response, status
-from pydantic import BaseModel
+import sqlite3
+from typing import List, Optional
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 
-FILE_PATH = "tasks.json"
-tasks_db = []
+DB_FILE = "tasks.db"
 
-def load_tasks():
-    """Load tasks from JSON file on startup."""
-    global tasks_db
-    if os.path.exists(FILE_PATH):
-        try:
-            with open(FILE_PATH, "r") as f:
-                tasks_db = json.load(f)
-        except json.JSONDecodeError:
-            tasks_db = []
-    else:
-        tasks_db = []
 
-def save_tasks():
-    """Write current tasks list to JSON file."""
-    with open(FILE_PATH, "w") as f:
-        json.dump(tasks_db, f, indent=4)
+# --- Database Helpers ---
+def get_db_connection():
+    """Returns a SQLite connection configured to return rows as dictionaries."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-load_tasks()
 
+def init_db():
+    """Creates the tasks table if missing and seeds initial data if table is empty."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 1. Create table if it doesn't exist
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            done BOOLEAN NOT NULL DEFAULT 0
+        )
+    """)
+
+    # 2. Check if table is empty
+    cursor.execute("SELECT COUNT(*) FROM tasks")
+    count = cursor.fetchone()[0]
+
+    # 3. Seed 3 example tasks only if count is 0
+    if count == 0:
+        initial_tasks = [
+            ("Learn FastAPI", 1),
+            ("Build a CRUD API", 1),
+            ("Connect SQLite Database", 0),
+        ]
+        cursor.executemany(
+            "INSERT INTO tasks (title, done) VALUES (?, ?)", initial_tasks
+        )
+
+    conn.commit()
+    conn.close()
+
+
+# Initialize DB when the script loads
+init_db()
+
+
+# --- Pydantic Models ---
 class TaskCreate(BaseModel):
+    title: str = Field(..., min_length=1)
+    done: Optional[bool] = False
+
+
+class TaskResponse(BaseModel):
+    id: int
     title: str
-    completed: bool = False
+    done: bool
 
-class TaskUpdate(BaseModel):
-    title: str
-    completed: bool
 
-@app.get("/")
-def get_root():
-    return {
-        "name": "Task API",
-        "version": "1.0",
-        "endpoints": ["/tasks"]
-    }
+# Temporary GET /tasks endpoint for testing Stage 0
+@app.get("/tasks", response_model=List[TaskResponse])
+def get_tasks():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, done FROM tasks")
+    rows = cursor.fetchall()
+    conn.close()
 
-@app.get("/health")
-def get_health():
-    return {"status": "ok"}
-
-@app.get("/tasks")
-def get_tasks(completed: Optional[bool] = None):
-    if completed is not None:
-        filtered_tasks = [t for t in tasks_db if t["completed"] == completed]
-        return {"tasks": filtered_tasks}
-    return {"tasks": tasks_db}
-
-@app.post("/tasks", status_code=status.HTTP_201_CREATED)
-def create_task(task: TaskCreate):
-    new_id = max([t["id"] for t in tasks_db], default=0) + 1
-    new_task = {
-        "id": new_id,
-        "title": task.title,
-        "completed": task.completed
-    }
-    tasks_db.append(new_task)
-    save_tasks()
-    return new_task
-
-@app.get("/tasks/{task_id}")
-def get_task_by_id(task_id: int):
-    for task in tasks_db:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-
-@app.put("/tasks/{task_id}")
-def update_task(task_id: int, updated_task: TaskUpdate):
-    for task in tasks_db:
-        if task["id"] == task_id:
-            task["title"] = updated_task.title
-            task["completed"] = updated_task.completed
-            save_tasks()
-            return task
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-
-@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int):
-    for index, task in enumerate(tasks_db):
-        if task["id"] == task_id:
-            tasks_db.pop(index)
-            save_tasks()
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return [dict(row) for row in rows]
