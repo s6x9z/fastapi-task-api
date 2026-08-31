@@ -2,5 +2,5 @@
 __pycache__/
 *.pyc
 tasks.db
-__pycache__/
 .pytest_cache/
+.env
