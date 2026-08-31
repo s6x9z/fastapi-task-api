@@ -7,8 +7,6 @@ app = FastAPI()
 
 DB_FILE = "tasks.db"
 
-
-# --- Database Helpers ---
 def get_db_connection():
     """Returns a SQLite connection configured to return rows as dictionaries."""
     conn = sqlite3.connect(DB_FILE)
@@ -21,7 +19,6 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. Create table if it doesn't exist
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,11 +27,9 @@ def init_db():
         )
     """)
 
-    # 2. Check if table is empty
     cursor.execute("SELECT COUNT(*) FROM tasks")
     count = cursor.fetchone()[0]
 
-    # 3. Seed 3 example tasks only if count is 0
     if count == 0:
         initial_tasks = [
             ("Learn FastAPI", 1),
@@ -48,12 +43,8 @@ def init_db():
     conn.commit()
     conn.close()
 
-
-# Initialize DB when the script loads
 init_db()
 
-
-# --- Pydantic Models ---
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1)
     done: Optional[bool] = False
@@ -64,10 +55,9 @@ class TaskResponse(BaseModel):
     title: str
     done: bool
 
-
-# Temporary GET /tasks endpoint for testing Stage 0
 @app.get("/tasks", response_model=List[TaskResponse])
 def get_tasks():
+    """Fetch all tasks from SQLite."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, title, done FROM tasks")
@@ -75,3 +65,45 @@ def get_tasks():
     conn.close()
 
     return [dict(row) for row in rows]
+
+
+@app.get("/tasks/{task_id}", response_model=TaskResponse)
+def get_task(task_id: int):
+    """Fetch a single task by ID using parameterized SQL query."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id, title, done FROM tasks WHERE id = ?", (task_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
+
+    return dict(row)
+
+
+@app.post(
+    "/tasks",
+    response_model=TaskResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_task(task: TaskCreate):
+    """Insert a new task into SQLite database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        (task.title, int(task.done)),
+    )
+    conn.commit()
+
+    new_id = cursor.lastrowid
+    conn.close()
+
+    return {"id": new_id, "title": task.title, "done": task.done}
